@@ -3,6 +3,9 @@ const ctx = canvas.getContext('2d');
 const W = 400, H = 650;
 canvas.width = W; canvas.height = H;
 
+const bgImage = new Image();
+bgImage.src = './almau_flappybird.png';
+
 const GRAVITY = 0.45;
 const JUMP = -9.5;
 const PIPE_SPEED = 3;
@@ -149,9 +152,9 @@ function drawBackground() {
     ctx.fill();
   });
 
-  // Building — parallax layer 2 (medium, ~1/6 pipe speed)
-  if (moving) buildingScroll += 0.5;
-  drawBuilding();
+  // Building — parallax layer 2 (~4-5x slower than pipes)
+  if (moving) buildingScroll += 0.7;
+  drawBuildingImage();
 
   // Ground — parallax layer 3 (fast)
   if (moving) groundScroll += PIPE_SPEED + score * 0.04;
@@ -181,44 +184,24 @@ function drawBackground() {
   ctx.fillText('АЛМАТЫ МЕНЕДЖМЕНТ УНИВЕРСИТЕТ', W/2, H-20);
 }
 
-function drawBuilding() {
-  const ox = -(buildingScroll % 450);
-  for (let pass = 0; pass < 2; pass++) {
-    drawBuildingGroup(ox + pass * 450);
-  }
-}
+function drawBuildingImage() {
+  if (!bgImage.complete || !bgImage.naturalWidth) return;
 
-function drawBuildingGroup(bx) {
-  ctx.fillStyle = 'rgba(20, 40, 80, 0.6)';
-  ctx.fillRect(60 + bx, H-200, 120, 140);
-  ctx.fillRect(220 + bx, H-170, 90, 110);
-  ctx.fillRect(50 + bx, H-240, 60, 50);
+  const imgW = W;
+  const imgH = H - 60 - 150; // from y=150 to ground line
+  const ox = -(buildingScroll % imgW);
 
-  const winRows = [H-190, H-170, H-150, H-130, H-110];
-  winRows.forEach(row => {
-    [70,90,110,130,150].forEach(col => {
-      if (Math.random() > 0.3 || frame === 0) {
-        ctx.fillStyle = Math.random() > 0.7 ? 'rgba(255,220,100,0.25)' : 'rgba(0,100,200,0.1)';
-      }
-      ctx.fillRect(col + bx, row, 12, 10);
-    });
-  });
+  // Clip to the building zone — sky gradient stays visible above y=150
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 150, W, imgH);
+  ctx.clip();
 
-  [230,250,270,290].forEach(col => {
-    [H-160, H-140, H-120, H-100].forEach(row => {
-      ctx.fillStyle = 'rgba(255,220,100,0.12)';
-      ctx.fillRect(col + bx, row, 10, 8);
-    });
-  });
+  // Draw twice side-by-side for seamless horizontal loop
+  ctx.drawImage(bgImage, ox,       150, imgW, imgH);
+  ctx.drawImage(bgImage, ox + imgW, 150, imgW, imgH);
 
-  ctx.fillStyle = 'rgba(150, 150, 150, 0.4)';
-  ctx.fillRect(108 + bx, H-270, 3, 50);
-  ctx.fillStyle = 'rgba(0, 100, 255, 0.5)';
-  ctx.fillRect(111 + bx, H-270, 22, 14);
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.font = 'bold 7px Nunito';
-  ctx.textAlign = 'left';
-  ctx.fillText('AU', 113 + bx, H-260);
+  ctx.restore();
 }
 
 // ===== PIPES =====
@@ -475,13 +458,6 @@ function drawHUD() {
   document.getElementById('queueStatus').style.display = 'block';
   document.getElementById('queueStatus').textContent = `📋 Ты продвинулся на ${score} мест в очереди`;
 
-  if (!doubleJumpUsed) {
-    ctx.fillStyle = 'rgba(0,200,255,0.6)';
-    ctx.font = 'bold 10px Nunito';
-    ctx.textAlign = 'right';
-    ctx.fillText('🚀 2x прыжок готов', W-12, H-75);
-  }
-
   if (playerHasShield) {
     ctx.fillStyle = 'rgba(0,200,255,0.7)';
     ctx.font = 'bold 10px Nunito';
@@ -680,11 +656,6 @@ function jump() {
   } else if (!doubleJumpUsed) {
     player.vy = JUMP * 0.85;
     doubleJumpUsed = true;
-    floatingTexts.push({
-      x: player.x + 20, y: player.y - 10,
-      text: '🚀 ДВОЙНОЙ!', color: '#00aaff', size: 13,
-      life: 40, maxLife: 40
-    });
   }
 }
 
@@ -770,4 +741,5 @@ document.querySelectorAll('.btn, .ctrl-btn, #homeBtn, .btn-outline').forEach(btn
   btn.addEventListener('touchstart', e => e.stopPropagation());
 });
 
-gameLoop();
+bgImage.onload = () => gameLoop();
+bgImage.onerror = () => gameLoop(); // fallback если файл недоступен
