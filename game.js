@@ -137,8 +137,8 @@ function drawBackground() {
 
   const sky = ctx.createLinearGradient(0, 0, 0, H);
   sky.addColorStop(0, '#07091f');
-  sky.addColorStop(0.5, '#0b1540');
-  sky.addColorStop(1, '#1a2a0a');
+  sky.addColorStop(0.5, '#0d1535');
+  sky.addColorStop(1, '#111d3a');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
 
@@ -160,12 +160,12 @@ function drawBackground() {
   if (moving) groundScroll += PIPE_SPEED + score * 0.04;
 
   const groundGrad = ctx.createLinearGradient(0, H-60, 0, H);
-  groundGrad.addColorStop(0, '#0d2a0d');
-  groundGrad.addColorStop(1, '#050f05');
+  groundGrad.addColorStop(0, '#1a1a2e');
+  groundGrad.addColorStop(1, '#0f0f1a');
   ctx.fillStyle = groundGrad;
   ctx.fillRect(0, H-60, W, 60);
 
-  ctx.fillStyle = '#1a4a1a';
+  ctx.fillStyle = '#0d0d1e';
   ctx.fillRect(0, H-62, W, 4);
 
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
@@ -201,7 +201,18 @@ function drawBuildingImage() {
   ctx.drawImage(bgImage, ox,       150, imgW, imgH);
   ctx.drawImage(bgImage, ox + imgW, 150, imgW, imgH);
 
+  ctx.fillStyle = 'rgba(0, 0, 20, 0.45)';
+  ctx.fillRect(0, 0, W, H);
+
   ctx.restore();
+
+  // Плавный переход небо → здание (70px)
+  const fadeH = 70;
+  const fade = ctx.createLinearGradient(0, 150, 0, 150 + fadeH);
+  fade.addColorStop(0, '#111d3a');
+  fade.addColorStop(1, 'rgba(17, 29, 58, 0)');
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, 150, W, fadeH);
 }
 
 // ===== PIPES =====
