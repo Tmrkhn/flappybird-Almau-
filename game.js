@@ -9,12 +9,30 @@ const PIPE_SPEED = 3;
 const PIPE_GAP = 155;
 const PIPE_INTERVAL = 1800;
 
+// --- State ---
 let gameState = 'start';
 let score = 0, bestScore = 0, frame = 0;
 let lastPipe = 0, animFrame;
-let doubleJumpUsed = false;
-let lastTap = 0;
+let doubleJumpUsed = false, lastTap = 0;
+let isPaused = false, isMuted = false;
 
+// Parallax
+let buildingScroll = 0, groundScroll = 0;
+
+// Shield
+let shield = null;
+let playerHasShield = false;
+let shieldGlow = 0;
+let pipesSpawned = 0;
+let nextShieldPipe = 10 + Math.floor(Math.random() * 3);
+
+// Death
+let deathFlash = 0;
+
+// Audio
+let audioCtx = null;
+
+// --- Messages ---
 const deathMessages = [
   "Эдвайзер ушёл на обед 😔",
   "Документы не приняты! Нужна печать.",
@@ -28,16 +46,14 @@ const deathMessages = [
   "Вы опоздали! Запись закрыта.",
 ];
 
+// --- Player ---
 const player = {
   x: 80, y: H/2, vy: 0, w: 38, h: 38,
-  angle: 0, alive: true,
-  wingFrame: 0,
+  angle: 0, alive: true, wingFrame: 0,
 };
 
-let pipes = [];
-let particles = [];
+let pipes = [], particles = [], floatingTexts = [];
 let bgStars = [];
-let floatingTexts = [];
 
 for (let i = 0; i < 60; i++) {
   bgStars.push({
@@ -49,16 +65,83 @@ for (let i = 0; i < 60; i++) {
   });
 }
 
+// ===== AUDIO =====
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playSweep(f1, f2, dur, type, gain) {
+  if (isMuted) return;
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = type || 'sine';
+    osc.connect(g); g.connect(ac.destination);
+    osc.frequency.setValueAtTime(f1, ac.currentTime);
+    osc.frequency.linearRampToValueAtTime(f2, ac.currentTime + dur);
+    g.gain.setValueAtTime(gain, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(); osc.stop(ac.currentTime + dur + 0.05);
+  } catch(e) {}
+}
+
+function playTone(freq, dur, gain) {
+  if (isMuted) return;
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    osc.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(gain, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(); osc.stop(ac.currentTime + dur + 0.05);
+  } catch(e) {}
+}
+
+function playSound(type) {
+  switch(type) {
+    case 'jump':        playSweep(200, 400, 0.1, 'sine', 0.2); break;
+    case 'score':       playTone(880, 0.15, 0.2); break;
+    case 'shieldPick':
+      [0, 80, 160].forEach((delay, i) => {
+        setTimeout(() => playTone([523, 659, 784][i], 0.25, 0.15), delay);
+      }); break;
+    case 'shieldBreak': playSweep(300, 100, 0.3, 'sawtooth', 0.2); break;
+    case 'death':       playSweep(400, 150, 0.5, 'sine', 0.25); break;
+  }
+}
+
+function toggleMute() {
+  isMuted = !isMuted;
+  document.getElementById('muteBtn').textContent = isMuted ? '🔇' : '🔊';
+}
+
+// ===== PAUSE =====
+function togglePause() {
+  if (gameState !== 'playing') return;
+  isPaused = !isPaused;
+  document.getElementById('pauseScreen').style.display = isPaused ? 'flex' : 'none';
+}
+
+// ===== BACKGROUND =====
 function drawBackground() {
-  let sky = ctx.createLinearGradient(0, 0, 0, H);
+  const moving = (gameState === 'playing' || gameState === 'dead') && !isPaused;
+
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
   sky.addColorStop(0, '#07091f');
   sky.addColorStop(0.5, '#0b1540');
   sky.addColorStop(1, '#1a2a0a');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
 
+  // Stars — parallax layer 1 (slowest)
   bgStars.forEach(s => {
-    if (gameState === 'playing') s.x -= s.speed;
+    if (moving) s.x -= s.speed;
     if (s.x < 0) s.x = W;
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
@@ -66,9 +149,14 @@ function drawBackground() {
     ctx.fill();
   });
 
+  // Building — parallax layer 2 (medium, ~1/6 pipe speed)
+  if (moving) buildingScroll += 0.5;
   drawBuilding();
 
-  let groundGrad = ctx.createLinearGradient(0, H-60, 0, H);
+  // Ground — parallax layer 3 (fast)
+  if (moving) groundScroll += PIPE_SPEED + score * 0.04;
+
+  const groundGrad = ctx.createLinearGradient(0, H-60, 0, H);
   groundGrad.addColorStop(0, '#0d2a0d');
   groundGrad.addColorStop(1, '#050f05');
   ctx.fillStyle = groundGrad;
@@ -79,10 +167,11 @@ function drawBackground() {
 
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
   ctx.lineWidth = 1;
-  for (let i = 0; i < W; i += 40) {
+  const gx = -(groundScroll % 40);
+  for (let i = 0; i < W + 40; i += 40) {
     ctx.beginPath();
-    ctx.moveTo(i - (frame % 40), H-58);
-    ctx.lineTo(i - (frame % 40), H);
+    ctx.moveTo(gx + i, H-58);
+    ctx.lineTo(gx + i, H);
     ctx.stroke();
   }
 
@@ -93,10 +182,17 @@ function drawBackground() {
 }
 
 function drawBuilding() {
+  const ox = -(buildingScroll % 450);
+  for (let pass = 0; pass < 2; pass++) {
+    drawBuildingGroup(ox + pass * 450);
+  }
+}
+
+function drawBuildingGroup(bx) {
   ctx.fillStyle = 'rgba(20, 40, 80, 0.6)';
-  ctx.fillRect(60, H-200, 120, 140);
-  ctx.fillRect(220, H-170, 90, 110);
-  ctx.fillRect(50, H-240, 60, 50);
+  ctx.fillRect(60 + bx, H-200, 120, 140);
+  ctx.fillRect(220 + bx, H-170, 90, 110);
+  ctx.fillRect(50 + bx, H-240, 60, 50);
 
   const winRows = [H-190, H-170, H-150, H-130, H-110];
   winRows.forEach(row => {
@@ -104,158 +200,207 @@ function drawBuilding() {
       if (Math.random() > 0.3 || frame === 0) {
         ctx.fillStyle = Math.random() > 0.7 ? 'rgba(255,220,100,0.25)' : 'rgba(0,100,200,0.1)';
       }
-      ctx.fillRect(col, row, 12, 10);
+      ctx.fillRect(col + bx, row, 12, 10);
     });
   });
 
   [230,250,270,290].forEach(col => {
     [H-160, H-140, H-120, H-100].forEach(row => {
       ctx.fillStyle = 'rgba(255,220,100,0.12)';
-      ctx.fillRect(col, row, 10, 8);
+      ctx.fillRect(col + bx, row, 10, 8);
     });
   });
 
   ctx.fillStyle = 'rgba(150, 150, 150, 0.4)';
-  ctx.fillRect(108, H-270, 3, 50);
+  ctx.fillRect(108 + bx, H-270, 3, 50);
   ctx.fillStyle = 'rgba(0, 100, 255, 0.5)';
-  ctx.fillRect(111, H-270, 22, 14);
+  ctx.fillRect(111 + bx, H-270, 22, 14);
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   ctx.font = 'bold 7px Nunito';
   ctx.textAlign = 'left';
-  ctx.fillText('AU', 113, H-260);
+  ctx.fillText('AU', 113 + bx, H-260);
 }
 
+// ===== PIPES =====
 function drawPipe(pipe) {
   drawDocumentStack(pipe.x, 0, pipe.w, pipe.topH, true);
-
-  let botY = pipe.topH + PIPE_GAP;
+  const botY = pipe.topH + PIPE_GAP;
   drawDocumentStack(pipe.x, botY, pipe.w, H - botY - 60, false);
 
-  let gapMid = pipe.topH + PIPE_GAP/2;
-  let grd = ctx.createRadialGradient(pipe.x + pipe.w/2, gapMid, 0, pipe.x + pipe.w/2, gapMid, 80);
-  grd.addColorStop(0, 'rgba(0, 200, 100, 0.08)');
+  const gapMid = pipe.topH + PIPE_GAP/2;
+  const grd = ctx.createRadialGradient(pipe.x + pipe.w/2, gapMid, 0, pipe.x + pipe.w/2, gapMid, 80);
+  grd.addColorStop(0, pipe.moving ? 'rgba(255,180,0,0.07)' : 'rgba(0,200,100,0.08)');
   grd.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grd;
   ctx.fillRect(pipe.x - 20, pipe.topH, pipe.w + 40, PIPE_GAP);
+
+  if (pipe.moving) {
+    ctx.fillStyle = 'rgba(255,180,50,0.45)';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('↕', pipe.x + pipe.w/2, gapMid + 4);
+  }
 }
 
 function drawDocumentStack(x, y, w, h, isTop) {
   if (h <= 0) return;
-  let layers = Math.max(1, Math.floor(h / 18));
-  let layerH = h / layers;
+  const layers = Math.max(1, Math.floor(h / 18));
+  const layerH = h / layers;
 
   for (let i = 0; i < layers; i++) {
-    let ly = y + i * layerH;
-    let offset = (i % 2 === 0) ? 0 : 2;
-
-    let shade = 220 + (i % 3) * 12;
-    ctx.fillStyle = `rgb(${shade}, ${shade-10}, ${shade-20})`;
+    const ly = y + i * layerH;
+    const offset = (i % 2 === 0) ? 0 : 2;
+    const shade = 220 + (i % 3) * 12;
+    ctx.fillStyle = `rgb(${shade},${shade-10},${shade-20})`;
     ctx.fillRect(x + offset, ly + 1, w - offset*2, layerH - 2);
 
-    ctx.fillStyle = 'rgba(100, 100, 150, 0.3)';
+    ctx.fillStyle = 'rgba(100,100,150,0.3)';
     for (let l = 0; l < 3; l++) {
       ctx.fillRect(x + offset + 6, ly + 5 + l*4, w - offset*2 - 12, 1);
     }
 
     if (i % 5 === 0) {
-      ctx.fillStyle = 'rgba(0, 80, 200, 0.4)';
+      ctx.fillStyle = 'rgba(0,80,200,0.4)';
       ctx.font = 'bold 6px Nunito';
       ctx.textAlign = 'center';
       ctx.fillText('AlmaU', x + w/2, ly + 10);
     }
   }
 
-  let edgeGrd = ctx.createLinearGradient(x, 0, x + 8, 0);
-  edgeGrd.addColorStop(0, 'rgba(0,0,0,0.4)');
-  edgeGrd.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = edgeGrd;
-  ctx.fillRect(x, y, 10, h);
+  const eg1 = ctx.createLinearGradient(x, 0, x+8, 0);
+  eg1.addColorStop(0, 'rgba(0,0,0,0.4)'); eg1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = eg1; ctx.fillRect(x, y, 10, h);
 
-  let edgeGrd2 = ctx.createLinearGradient(x+w-8, 0, x+w, 0);
-  edgeGrd2.addColorStop(0, 'rgba(0,0,0,0)');
-  edgeGrd2.addColorStop(1, 'rgba(0,0,0,0.4)');
-  ctx.fillStyle = edgeGrd2;
-  ctx.fillRect(x+w-10, y, 10, h);
+  const eg2 = ctx.createLinearGradient(x+w-8, 0, x+w, 0);
+  eg2.addColorStop(0, 'rgba(0,0,0,0)'); eg2.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = eg2; ctx.fillRect(x+w-10, y, 10, h);
 }
 
+// ===== SHIELD =====
+function drawShield() {
+  if (!shield) return;
+
+  if (gameState === 'playing' && !isPaused) {
+    shield.x -= PIPE_SPEED + score * 0.04;
+    shield.phase += 0.08;
+  }
+
+  if (shield.x < -30) { shield = null; return; }
+
+  const pulse = 0.25 + Math.sin(shield.phase) * 0.12;
+  const glow = ctx.createRadialGradient(shield.x, shield.y, 0, shield.x, shield.y, 34);
+  glow.addColorStop(0, `rgba(0,160,255,${pulse})`);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(shield.x, shield.y, 34, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.font = '26px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🛡️', shield.x, shield.y + 9);
+
+  if (gameState === 'playing' && !isPaused) {
+    const dx = shield.x - (player.x + player.w/2);
+    const dy = shield.y - (player.y + player.h/2);
+    if (Math.sqrt(dx*dx + dy*dy) < 22) {
+      playerHasShield = true;
+      shield = null;
+      playSound('shieldPick');
+      floatingTexts.push({
+        x: player.x + 20, y: player.y - 15,
+        text: '🛡️ ЩИТ!', color: '#00ccff', size: 14,
+        life: 55, maxLife: 55
+      });
+    }
+  }
+}
+
+// ===== PLAYER =====
 function drawPlayer() {
   ctx.save();
-  let cx = player.x + player.w/2;
-  let cy = player.y + player.h/2;
+  const cx = player.x + player.w/2;
+  const cy = player.y + player.h/2;
   ctx.translate(cx, cy);
 
-  let targetAngle = Math.max(-0.5, Math.min(0.8, player.vy * 0.06));
+  const targetAngle = Math.max(-0.5, Math.min(0.8, player.vy * 0.06));
   player.angle += (targetAngle - player.angle) * 0.15;
   ctx.rotate(player.angle);
 
+  // Shield / break aura
+  if (playerHasShield || shieldGlow > 0) {
+    if (shieldGlow > 0) shieldGlow--;
+    const t = playerHasShield ? (0.5 + Math.sin(frame * 0.15) * 0.2) : (shieldGlow / 40) * 0.7;
+    const auraColor = shieldGlow > 0 ? `rgba(255,120,0,${t})` : `rgba(0,160,255,${t})`;
+    const auraGrd = ctx.createRadialGradient(0, 0, 12, 0, 0, 30);
+    auraGrd.addColorStop(0, shieldGlow > 0 ? `rgba(255,120,0,${t*0.5})` : `rgba(0,160,255,${t*0.5})`);
+    auraGrd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = auraGrd;
+    ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 21, 0, Math.PI*2);
+    ctx.strokeStyle = auraColor; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+
+  // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.2)';
   ctx.beginPath();
   ctx.ellipse(2, player.h/2 - 2, 12, 5, 0, 0, Math.PI*2);
   ctx.fill();
 
+  // Backpack
   ctx.fillStyle = '#1a4a8a';
-  ctx.beginPath();
-  ctx.roundRect(-8, -4, 14, 16, 3);
-  ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-8, -4, 14, 16, 3); ctx.fill();
   ctx.fillStyle = '#0d2a5a';
   ctx.fillRect(-6, 2, 10, 1);
   ctx.fillRect(-6, 5, 10, 1);
 
+  // Body (jacket)
   ctx.fillStyle = '#003580';
-  ctx.beginPath();
-  ctx.roundRect(-10, -6, 20, 18, 4);
-  ctx.fill();
-
+  ctx.beginPath(); ctx.roundRect(-10, -6, 20, 18, 4); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.font = 'bold 5px Nunito';
   ctx.textAlign = 'center';
   ctx.fillText('AU', 0, 3);
 
+  // Head
   ctx.fillStyle = '#f0c080';
-  ctx.beginPath();
-  ctx.arc(0, -12, 10, 0, Math.PI*2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -12, 10, 0, Math.PI*2); ctx.fill();
 
+  // Hair
   ctx.fillStyle = '#3a2010';
-  ctx.beginPath();
-  ctx.arc(0, -18, 8, Math.PI, 0);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -18, 8, Math.PI, 0); ctx.fill();
 
+  // Eyes
   ctx.fillStyle = '#333';
   ctx.beginPath();
   ctx.arc(-3, -13, 1.5, 0, Math.PI*2);
   ctx.arc(3, -13, 1.5, 0, Math.PI*2);
   ctx.fill();
 
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(0, -11, 3, 0, Math.PI);
-  ctx.stroke();
+  // Smile
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, -11, 3, 0, Math.PI); ctx.stroke();
 
+  // Arms
   player.wingFrame += 0.15;
-  let armSwing = Math.sin(player.wingFrame) * 4;
-  ctx.strokeStyle = '#003580';
-  ctx.lineWidth = 4;
-  ctx.lineCap = 'round';
+  const armSwing = Math.sin(player.wingFrame) * 4;
+  ctx.strokeStyle = '#003580'; ctx.lineWidth = 4; ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(-10, 0);
-  ctx.lineTo(-16, 4 + armSwing);
-  ctx.moveTo(10, 0);
-  ctx.lineTo(16, 4 - armSwing);
+  ctx.moveTo(-10, 0); ctx.lineTo(-16, 4 + armSwing);
+  ctx.moveTo(10, 0);  ctx.lineTo(16,  4 - armSwing);
   ctx.stroke();
 
-  let legSwing = Math.sin(player.wingFrame) * 3;
+  // Legs
+  const legSwing = Math.sin(player.wingFrame) * 3;
   ctx.strokeStyle = '#1a3a6a';
   ctx.beginPath();
-  ctx.moveTo(-4, 12);
-  ctx.lineTo(-6, 20 + legSwing);
-  ctx.moveTo(4, 12);
-  ctx.lineTo(6, 20 - legSwing);
+  ctx.moveTo(-4, 12); ctx.lineTo(-6, 20 + legSwing);
+  ctx.moveTo(4, 12);  ctx.lineTo(6,  20 - legSwing);
   ctx.stroke();
 
+  // Jump trail
   if (player.vy < -6) {
-    ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
+    ctx.fillStyle = 'rgba(0,150,255,0.3)';
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.arc((Math.random()-0.5)*20, 15 + i*5, 3, 0, Math.PI*2);
@@ -266,14 +411,14 @@ function drawPlayer() {
   ctx.restore();
 }
 
+// ===== PARTICLES =====
 function drawParticles() {
   particles = particles.filter(p => p.life > 0);
   particles.forEach(p => {
     p.x += p.vx; p.y += p.vy;
-    p.vy += 0.15; p.life--;
+    p.vy += 0.2; p.life--;
     ctx.globalAlpha = p.life / p.maxLife;
-    ctx.fillStyle = p.color;
-    ctx.font = p.size + 'px Nunito';
+    ctx.font = p.size + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(p.text, p.x, p.y);
     ctx.globalAlpha = 1;
@@ -294,32 +439,25 @@ function drawFloatingTexts() {
 }
 
 function addParticles(x, y) {
-  let emojis = ['📄','📋','📝','✏️','📚'];
-  for (let i = 0; i < 8; i++) {
+  const emojis = ['📄','📋','📝','✏️','📚','🗂️','📃','📑'];
+  for (let i = 0; i < 16; i++) {
+    const angle = (Math.PI * 2 / 16) * i + (Math.random() - 0.5) * 0.5;
+    const speed = 2.5 + Math.random() * 5;
     particles.push({
       x, y,
-      vx: (Math.random()-0.5) * 6,
-      vy: (Math.random()-0.5) * 6 - 2,
-      text: emojis[Math.floor(Math.random()*emojis.length)],
-      size: 14 + Math.random()*8,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1.5,
+      text: emojis[Math.floor(Math.random() * emojis.length)],
+      size: 14 + Math.random() * 10,
       color: '#fff',
-      life: 40, maxLife: 40
+      life: 60, maxLife: 60
     });
   }
 }
 
-function drawReadyHint() {
-  let alpha = 0.4 + Math.sin(frame * 0.08) * 0.4;
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 11px "Press Start 2P", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('ТАП ДЛЯ СТАРТА', W/2, H/2 + 80);
-  ctx.globalAlpha = 1;
-}
-
+// ===== HUD =====
 function addScorePopup(x, y) {
-  let msgs = ['+1 место!', 'Молодец!', 'Дальше!', 'Вперёд!', 'Да!'];
+  const msgs = ['+1 место!','Молодец!','Дальше!','Вперёд!','Да!'];
   floatingTexts.push({
     x, y,
     text: msgs[Math.floor(Math.random()*msgs.length)],
@@ -335,30 +473,70 @@ function drawHUD() {
   document.getElementById('score').style.display = 'block';
   document.getElementById('score').textContent = score;
   document.getElementById('queueStatus').style.display = 'block';
-  document.getElementById('queueStatus').textContent =
-    `📋 Ты продвинулся на ${score} мест в очереди`;
+  document.getElementById('queueStatus').textContent = `📋 Ты продвинулся на ${score} мест в очереди`;
 
   if (!doubleJumpUsed) {
-    ctx.fillStyle = 'rgba(0, 200, 255, 0.6)';
+    ctx.fillStyle = 'rgba(0,200,255,0.6)';
     ctx.font = 'bold 10px Nunito';
     ctx.textAlign = 'right';
     ctx.fillText('🚀 2x прыжок готов', W-12, H-75);
   }
+
+  if (playerHasShield) {
+    ctx.fillStyle = 'rgba(0,200,255,0.7)';
+    ctx.font = 'bold 10px Nunito';
+    ctx.textAlign = 'left';
+    ctx.fillText('🛡️ Щит активен', 12, H-75);
+  }
 }
 
+function drawReadyHint() {
+  const alpha = 0.4 + Math.sin(frame * 0.08) * 0.4;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ТАП ДЛЯ СТАРТА', W/2, H/2 + 80);
+  ctx.globalAlpha = 1;
+}
+
+// ===== GAME LOGIC =====
 function spawnPipe() {
-  let minTop = 80, maxTop = H - PIPE_GAP - 120;
-  let topH = Math.floor(Math.random() * (maxTop - minTop) + minTop);
-  pipes.push({ x: W + 10, topH, w: 52, passed: false });
+  const minTop = 80, maxTop = H - PIPE_GAP - 120;
+  const topH = Math.floor(Math.random() * (maxTop - minTop) + minTop);
+  const isMoving = (pipesSpawned % 9 === 8);
+  pipes.push({
+    x: W + 10, topH, baseTopH: topH, w: 52, passed: false,
+    moving: isMoving, movePhase: Math.random() * Math.PI * 2
+  });
+
+  pipesSpawned++;
+
+  if (pipesSpawned >= nextShieldPipe && !shield && !playerHasShield) {
+    shield = {
+      x: W + 36,
+      y: topH + PIPE_GAP/2 + (Math.random() - 0.5) * (PIPE_GAP * 0.4),
+      phase: 0
+    };
+    nextShieldPipe = pipesSpawned + 10 + Math.floor(Math.random() * 3);
+  }
 }
 
 function updatePipes() {
-  let now = Date.now();
+  const now = Date.now();
   if (now - lastPipe > PIPE_INTERVAL) {
     spawnPipe();
     lastPipe = now;
   }
-  pipes.forEach(p => { p.x -= PIPE_SPEED + score * 0.04; });
+
+  const speed = PIPE_SPEED + score * 0.04;
+  pipes.forEach(p => {
+    p.x -= speed;
+    if (p.moving) {
+      p.movePhase += 0.02;
+      p.topH = p.baseTopH + Math.sin(p.movePhase) * 35;
+    }
+  });
   pipes = pipes.filter(p => p.x > -p.w - 10);
 
   pipes.forEach(p => {
@@ -366,6 +544,7 @@ function updatePipes() {
       p.passed = true;
       score++;
       if (score > bestScore) bestScore = score;
+      playSound('score');
       addScorePopup(player.x + 30, player.y);
 
       if (score % 10 === 0) {
@@ -374,18 +553,15 @@ function updatePipes() {
           text: score === 10 ? '🎉 10 мест — отлично!' :
                 score === 20 ? '🔥 Ты стремительно идёшь!' :
                 score === 30 ? '⭐ Почти у эдвайзера!' : `🏆 ${score} мест пройдено!`,
-          color: '#ffdd00', size: 16,
-          life: 80, maxLife: 80
+          color: '#ffdd00', size: 16, life: 80, maxLife: 80
         });
       }
     }
 
-    let px = player.x + 4, py = player.y + 4;
-    let pw = player.w - 8, ph = player.h - 8;
+    const px = player.x + 4, py = player.y + 4;
+    const pw = player.w - 8, ph = player.h - 8;
     if (px < p.x + p.w && px + pw > p.x) {
-      if (py < p.topH || py + ph > p.topH + PIPE_GAP) {
-        die();
-      }
+      if (py < p.topH || py + ph > p.topH + PIPE_GAP) die();
     }
   });
 
@@ -394,30 +570,46 @@ function updatePipes() {
 
 function die() {
   if (!player.alive) return;
+
+  if (playerHasShield) {
+    playerHasShield = false;
+    shieldGlow = 40;
+    playSound('shieldBreak');
+    floatingTexts.push({
+      x: player.x + 20, y: player.y - 15,
+      text: '💥 ЩИТ СЛОМАН!', color: '#ffaa00', size: 12,
+      life: 55, maxLife: 55
+    });
+    return;
+  }
+
   player.alive = false;
   gameState = 'dead';
+  deathFlash = 12;
+  playSound('death');
   addParticles(player.x + player.w/2, player.y + player.h/2);
-
-  setTimeout(() => showGameOver(), 700);
+  setTimeout(() => showGameOver(), 800);
 }
 
 function showGameOver() {
   document.getElementById('score').style.display = 'none';
   document.getElementById('queueStatus').style.display = 'none';
+  document.getElementById('topControls').style.display = 'none';
 
-  let msg = deathMessages[Math.floor(Math.random() * deathMessages.length)];
-  let medal = score >= 30 ? '🏆' : score >= 20 ? '🥇' : score >= 10 ? '🥈' : score >= 5 ? '🥉' : '😔';
+  const msg = deathMessages[Math.floor(Math.random() * deathMessages.length)];
+  const medal = score >= 30 ? '🏆' : score >= 20 ? '🥇' : score >= 10 ? '🥈' : score >= 5 ? '🥉' : '😔';
 
   document.getElementById('medal').textContent = medal;
   document.getElementById('goMessage').textContent = msg;
   document.getElementById('finalScore').textContent = score;
   document.getElementById('bestScoreDisplay').textContent = bestScore;
 
-  let title = score >= 30 ? 'КРАСНЫЙ ДИПЛОМ! 🎓' :
-              score >= 20 ? 'ХОРОШИСТ! 👍' :
-              score >= 10 ? 'ТРОЕЧНИК 😅' : 'ПЕРЕСДАЧА!';
+  const title = score >= 30 ? 'КРАСНЫЙ ДИПЛОМ! 🎓' :
+                score >= 20 ? 'ХОРОШИСТ! 👍' :
+                score >= 10 ? 'ТРОЕЧНИК 😅' : 'ПЕРЕСДАЧА!';
   document.getElementById('goTitle').textContent = title;
-  document.getElementById('goTitle').style.color = score >= 30 ? '#ffdd00' : score >= 20 ? '#00ff88' : '#ff4444';
+  document.getElementById('goTitle').style.color =
+    score >= 30 ? '#ffdd00' : score >= 20 ? '#00ff88' : '#ff4444';
 
   document.getElementById('gameOverScreen').style.display = 'flex';
 }
@@ -427,34 +619,41 @@ function startGame() {
   document.getElementById('gameOverScreen').style.display = 'none';
   document.getElementById('score').style.display = 'none';
   document.getElementById('queueStatus').style.display = 'none';
+  document.getElementById('pauseScreen').style.display = 'none';
+  document.getElementById('topControls').style.display = 'none';
 
   pipes = []; particles = []; floatingTexts = [];
+  shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0;
   score = 0; frame = 0;
-  doubleJumpUsed = false;
+  doubleJumpUsed = false; isPaused = false;
+  pipesSpawned = 0;
+  nextShieldPipe = 10 + Math.floor(Math.random() * 3);
 
   player.y = H/2 - 20;
-  player.vy = 0;
-  player.angle = 0;
-  player.alive = true;
+  player.vy = 0; player.angle = 0; player.alive = true;
 
   gameState = 'ready';
 }
 
 function goToMainMenu() {
   document.getElementById('gameOverScreen').style.display = 'none';
+  document.getElementById('pauseScreen').style.display = 'none';
   document.getElementById('startScreen').style.display = 'flex';
   document.getElementById('score').style.display = 'none';
   document.getElementById('queueStatus').style.display = 'none';
+  document.getElementById('topControls').style.display = 'none';
 
   pipes = []; particles = []; floatingTexts = [];
-  score = 0; frame = 0;
+  shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0;
+  score = 0; frame = 0; isPaused = false;
   player.y = H/2; player.vy = 0; player.angle = 0; player.alive = true;
   gameState = 'start';
 }
 
+// ===== JUMP =====
 function jump() {
   if (gameState === 'start') { startGame(); return; }
-  if (gameState === 'dead') return;
+  if (gameState === 'dead' || isPaused) return;
   if (!player.alive) return;
 
   if (gameState === 'ready') {
@@ -462,9 +661,12 @@ function jump() {
     lastPipe = Date.now() + 1000;
     player.vy = JUMP;
     doubleJumpUsed = false;
+    document.getElementById('topControls').style.display = 'flex';
+    playSound('jump');
     return;
   }
 
+  playSound('jump');
   if (player.vy < 3 || !doubleJumpUsed === false) {
     player.vy = JUMP;
     doubleJumpUsed = false;
@@ -479,23 +681,25 @@ function jump() {
   }
 }
 
+// ===== GAME LOOP =====
 function gameLoop() {
   ctx.clearRect(0, 0, W, H);
-  frame++;
+  if (!isPaused) frame++;
 
   drawBackground();
 
   if (gameState === 'playing' || gameState === 'dead') {
     pipes.forEach(p => drawPipe(p));
+    drawShield();
 
-    if (gameState === 'playing') {
+    if (gameState === 'playing' && !isPaused) {
       player.vy += GRAVITY;
       player.y += player.vy;
       if (player.vy > 0) doubleJumpUsed = false;
       updatePipes();
     }
 
-    drawPlayer();
+    if (player.alive) drawPlayer();
     drawParticles();
     drawFloatingTexts();
     drawHUD();
@@ -509,7 +713,7 @@ function gameLoop() {
   }
 
   if (gameState === 'start') {
-    let previewY = H/2 - 50 + Math.sin(frame * 0.05) * 20;
+    const previewY = H/2 - 50 + Math.sin(frame * 0.05) * 20;
     ctx.save();
     ctx.translate(80, previewY);
     ctx.font = '38px sans-serif';
@@ -518,20 +722,32 @@ function gameLoop() {
     ctx.restore();
   }
 
+  if (deathFlash > 0) {
+    deathFlash--;
+    ctx.fillStyle = `rgba(255,80,80,${(deathFlash / 12) * 0.45})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   animFrame = requestAnimationFrame(gameLoop);
 }
 
+// ===== EVENTS =====
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
     e.preventDefault();
     jump();
   }
+  if (e.code === 'Escape' || e.code === 'KeyP') {
+    togglePause();
+  }
 });
 
-canvas.addEventListener('click', () => jump());
+canvas.addEventListener('click', () => { if (!isPaused) jump(); });
+
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  let now = Date.now();
+  if (isPaused) return;
+  const now = Date.now();
   if (now - lastTap < 300) {
     if (!doubleJumpUsed && gameState === 'playing') {
       player.vy = JUMP * 0.85;
@@ -543,7 +759,7 @@ canvas.addEventListener('touchstart', e => {
   lastTap = now;
 }, { passive: false });
 
-document.querySelectorAll('.btn').forEach(btn => {
+document.querySelectorAll('.btn, .ctrl-btn, #homeBtn, .btn-outline').forEach(btn => {
   btn.addEventListener('touchstart', e => e.stopPropagation());
 });
 

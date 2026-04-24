@@ -14,6 +14,10 @@
   <div id="ui">
     <div id="score">0</div>
     <div id="queueStatus">📋 Ты продвинулся на 0 мест в очереди</div>
+    <div id="topControls">
+      <button class="ctrl-btn" id="muteBtn" onclick="toggleMute()">🔊</button>
+      <button class="ctrl-btn" id="pauseBtn" onclick="togglePause()">⏸</button>
+    </div>
   </div>
 
   <div id="startScreen">
@@ -40,6 +44,12 @@
     <div id="goBestScore">Рекорд: <span id="bestScoreDisplay">0</span></div>
     <button class="btn" onclick="startGame()">↩ ЕЩЁ РАЗ</button>
     <div class="hint">Ты всё ближе к эдвайзеру! 💪</div>
+  </div>
+
+  <div id="pauseScreen">
+    <div class="pause-title">ПАУЗА</div>
+    <button class="btn" onclick="togglePause()">▶ ПРОДОЛЖИТЬ</button>
+    <button class="btn-outline" onclick="goToMainMenu()">← НА ГЛАВНУЮ</button>
   </div>
 </div>
 
