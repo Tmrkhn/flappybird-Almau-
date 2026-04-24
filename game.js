@@ -35,6 +35,13 @@ let nextShieldPipe = 10 + Math.floor(Math.random() * 3);
 // Death
 let deathFlash = 0;
 
+// Coins
+let totalCoins = parseInt(localStorage.getItem('almauCoins') || '0');
+let sessionCoins = 0;
+let coinOnScreen = null;
+let nextCoinPipe = 1 + Math.floor(Math.random() * 3);
+let invincible = 0;
+
 // Audio
 let audioCtx = null;
 
@@ -54,7 +61,7 @@ const deathMessages = [
 
 // --- Player ---
 const player = {
-  x: 80, y: H/2, vy: 0, w: 38, h: 38,
+  x: 80, y: H/2, vy: 0, w: 32, h: 32,
   angle: 0, alive: true, wingFrame: 0,
 };
 
@@ -119,6 +126,7 @@ function playSound(type) {
       }); break;
     case 'shieldBreak': playSweep(300, 100, 0.3, 'sawtooth', 0.2); break;
     case 'death':       playSweep(400, 150, 0.5, 'sine', 0.25); break;
+    case 'coin':        playTone(1047, 0.12, 0.18); break;
   }
 }
 
@@ -291,6 +299,61 @@ function drawShield() {
   }
 }
 
+// ===== COIN =====
+function drawCoin() {
+  if (!coinOnScreen) return;
+
+  if (gameState === 'playing' && !isPaused) {
+    coinOnScreen.x -= PIPE_SPEED + score * 0.04;
+    coinOnScreen.phase += 0.06;
+  }
+
+  if (coinOnScreen.x < -20) { coinOnScreen = null; return; }
+
+  const x = coinOnScreen.x;
+  const y = coinOnScreen.baseY + Math.sin(coinOnScreen.phase) * 6;
+  const r = 15;
+
+  // Outer glow
+  const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
+  glow.addColorStop(0, 'rgba(255,200,0,0.25)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(x, y, r * 2.2, 0, Math.PI*2); ctx.fill();
+
+  // Dark fill
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = '#1a1000'; ctx.fill();
+
+  // Gold border
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 2.5; ctx.stroke();
+
+  // GPA text
+  ctx.fillStyle = '#ffcc00';
+  ctx.font = 'bold 7px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('GPA', x, y + 3);
+
+  // Collision
+  if (gameState === 'playing' && !isPaused) {
+    const dx = x - (player.x + player.w/2);
+    const dy = y - (player.y + player.h/2);
+    if (Math.sqrt(dx*dx + dy*dy) < r + player.w/2) {
+      coinOnScreen = null;
+      totalCoins++;
+      sessionCoins++;
+      localStorage.setItem('almauCoins', totalCoins);
+      playSound('coin');
+      floatingTexts.push({
+        x: player.x + 20, y: player.y - 15,
+        text: '+1 GPA 🪙', color: '#ffcc00', size: 13,
+        life: 45, maxLife: 45
+      });
+    }
+  }
+}
+
 // ===== PLAYER =====
 function drawPlayer() {
   ctx.save();
@@ -307,16 +370,17 @@ function drawPlayer() {
     if (shieldGlow > 0) shieldGlow--;
     const t = playerHasShield ? (0.5 + Math.sin(frame * 0.15) * 0.2) : (shieldGlow / 40) * 0.7;
     const auraColor = shieldGlow > 0 ? `rgba(255,120,0,${t})` : `rgba(0,160,255,${t})`;
-    const auraGrd = ctx.createRadialGradient(0, 0, 12, 0, 0, 30);
+    const auraGrd = ctx.createRadialGradient(0, 0, 8, 0, 0, 37);
     auraGrd.addColorStop(0, shieldGlow > 0 ? `rgba(255,120,0,${t*0.5})` : `rgba(0,160,255,${t*0.5})`);
     auraGrd.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = auraGrd;
-    ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(0, 0, 21, 0, Math.PI*2);
+    ctx.beginPath(); ctx.arc(0, 0, 37, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 33, 0, Math.PI*2);
     ctx.strokeStyle = auraColor; ctx.lineWidth = 2.5; ctx.stroke();
   }
 
-  ctx.drawImage(playerImage, -player.w/2, -player.h/2, player.w, player.h);
+  const drawW = 85, drawH = 85;
+  ctx.drawImage(playerImage, -drawW/2, -drawH/2, drawW, drawH);
 
   ctx.restore();
 }
@@ -384,6 +448,8 @@ function drawHUD() {
   document.getElementById('score').textContent = score;
   document.getElementById('queueStatus').style.display = 'block';
   document.getElementById('queueStatus').textContent = `📋 Ты продвинулся на ${score} мест в очереди`;
+  document.getElementById('coinDisplay').style.display = 'block';
+  document.getElementById('coinDisplay').textContent = `🪙 ${totalCoins}`;
 
   if (playerHasShield) {
     ctx.fillStyle = 'rgba(0,200,255,0.7)';
@@ -414,6 +480,15 @@ function spawnPipe() {
   });
 
   pipesSpawned++;
+
+  if (pipesSpawned >= nextCoinPipe && !coinOnScreen) {
+    coinOnScreen = {
+      x: W + 36,
+      baseY: topH + PIPE_GAP/2 + (Math.random() - 0.5) * 60,
+      phase: Math.random() * Math.PI * 2
+    };
+    nextCoinPipe = pipesSpawned + 1 + Math.floor(Math.random() * 3);
+  }
 
   if (pipesSpawned >= nextShieldPipe && !shield && !playerHasShield) {
     shield = {
@@ -492,6 +567,7 @@ function updatePipes() {
 
 function die() {
   if (!player.alive) return;
+  if (invincible > 0) return;
 
   player.alive = false;
   gameState = 'dead';
@@ -505,6 +581,7 @@ function showGameOver() {
   document.getElementById('score').style.display = 'none';
   document.getElementById('queueStatus').style.display = 'none';
   document.getElementById('topControls').style.display = 'none';
+  document.getElementById('coinDisplay').style.display = 'none';
 
   const msg = deathMessages[Math.floor(Math.random() * deathMessages.length)];
   const medal = score >= 30 ? '🏆' : score >= 20 ? '🥇' : score >= 10 ? '🥈' : score >= 5 ? '🥉' : '😔';
@@ -521,6 +598,20 @@ function showGameOver() {
   document.getElementById('goTitle').style.color =
     score >= 30 ? '#ffdd00' : score >= 20 ? '#00ff88' : '#ff4444';
 
+  document.getElementById('goCoins').textContent = `+${sessionCoins} GPA за раунд`;
+  document.getElementById('goTotalCoins').textContent = `Всего GPA: ${totalCoins}`;
+
+  const btn = document.getElementById('continueBtn');
+  if (totalCoins >= 5) {
+    btn.disabled = false;
+    btn.textContent = '🪙 Продолжить за 5 GPA';
+    btn.classList.remove('btn-coin--disabled');
+  } else {
+    btn.disabled = true;
+    btn.textContent = `Недостаточно GPA (нужно 5)`;
+    btn.classList.add('btn-coin--disabled');
+  }
+
   document.getElementById('gameOverScreen').style.display = 'flex';
 }
 
@@ -534,10 +625,13 @@ function startGame() {
 
   pipes = []; particles = []; floatingTexts = [];
   shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0;
+  coinOnScreen = null; sessionCoins = 0; invincible = 0;
   score = 0; frame = 0;
   doubleJumpUsed = false; isPaused = false;
   pipesSpawned = 0;
   nextShieldPipe = 10 + Math.floor(Math.random() * 3);
+  nextCoinPipe = 1 + Math.floor(Math.random() * 3);
+  document.getElementById('coinDisplay').style.display = 'none';
 
   player.y = H/2 - 20;
   player.vy = 0; player.angle = 0; player.alive = true;
@@ -555,9 +649,43 @@ function goToMainMenu() {
 
   pipes = []; particles = []; floatingTexts = [];
   shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0;
+  coinOnScreen = null; sessionCoins = 0; invincible = 0;
   score = 0; frame = 0; isPaused = false;
   player.y = H/2; player.vy = 0; player.angle = 0; player.alive = true;
+  document.getElementById('coinDisplay').style.display = 'none';
+  document.getElementById('startCoinCount').textContent = totalCoins;
   gameState = 'start';
+}
+
+function continueByCoin() {
+  if (totalCoins < 5) return;
+  totalCoins -= 5;
+  localStorage.setItem('almauCoins', totalCoins);
+
+  document.getElementById('gameOverScreen').style.display = 'none';
+  document.getElementById('score').style.display = 'block';
+  document.getElementById('queueStatus').style.display = 'block';
+  document.getElementById('topControls').style.display = 'flex';
+  document.getElementById('coinDisplay').style.display = 'block';
+
+  pipes = [];
+  coinOnScreen = null;
+  lastPipe = Date.now() + 2500;
+  deathFlash = 0;
+
+  player.y = H/2;
+  player.vy = 0;
+  player.angle = 0;
+  player.alive = true;
+  invincible = 120;
+
+  gameState = 'playing';
+
+  floatingTexts.push({
+    x: W/2, y: H/2 - 60,
+    text: 'Продолжаем! 💪', color: '#00ff88', size: 16,
+    life: 90, maxLife: 90
+  });
 }
 
 // ===== JUMP =====
@@ -596,6 +724,7 @@ function gameLoop() {
   if (gameState === 'playing' || gameState === 'dead') {
     pipes.forEach(p => drawPipe(p));
     drawShield();
+    drawCoin();
 
     if (gameState === 'playing' && !isPaused) {
       player.vy += GRAVITY;
@@ -604,7 +733,14 @@ function gameLoop() {
       updatePipes();
     }
 
-    if (player.alive) drawPlayer();
+    if (player.alive) {
+      if (invincible > 0) {
+        invincible--;
+        if (Math.floor(invincible / 5) % 2 === 0) drawPlayer();
+      } else {
+        drawPlayer();
+      }
+    }
     drawParticles();
     drawFloatingTexts();
     drawHUD();
@@ -668,5 +804,6 @@ document.querySelectorAll('.btn, .ctrl-btn, #homeBtn, .btn-outline').forEach(btn
   btn.addEventListener('touchstart', e => e.stopPropagation());
 });
 
+document.getElementById('startCoinCount').textContent = totalCoins;
 bgImage.onload = () => gameLoop();
 bgImage.onerror = () => gameLoop(); // fallback если файл недоступен

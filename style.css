@@ -236,6 +236,65 @@ canvas {
 #homeBtn:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
 #homeBtn:active { transform: scale(0.95); }
 
+/* === COIN DISPLAY (in-game top-left) === */
+#coinDisplay {
+  position: absolute;
+  top: 20px;
+  left: 14px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  color: #ffcc00;
+  text-shadow: 1px 1px 0 #7a5c00;
+  display: none;
+  pointer-events: none;
+}
+
+/* === START SCREEN COIN BALANCE === */
+#startCoinBalance {
+  margin-top: 18px;
+  font-size: 11px;
+  color: rgba(255, 200, 0, 0.75);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+#startCoinBalance span {
+  color: #ffcc00;
+}
+
+/* === GAME OVER COIN INFO === */
+#goCoins {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: #ffcc00;
+  margin-bottom: 2px;
+}
+#goTotalCoins {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: rgba(255, 200, 0, 0.6);
+  margin-bottom: 18px;
+}
+
+/* === CONTINUE BUTTON === */
+.btn-coin {
+  background: linear-gradient(135deg, #7a5c00, #ccaa00);
+  border-color: #ffcc00;
+  font-size: 11px;
+  padding: 12px 24px;
+  animation: none;
+  box-shadow: 0 4px 16px rgba(200, 160, 0, 0.5);
+  margin-bottom: 10px;
+}
+.btn-coin:hover { background: linear-gradient(135deg, #a07a00, #ffdd00); }
+.btn-coin--disabled {
+  background: rgba(60, 60, 60, 0.6) !important;
+  border-color: rgba(255,255,255,0.15) !important;
+  color: rgba(255,255,255,0.35) !important;
+  box-shadow: none !important;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* === TOP CONTROLS (mute + pause) === */
 #topControls {
   position: absolute;

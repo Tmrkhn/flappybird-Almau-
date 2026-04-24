@@ -14,6 +14,7 @@
   <div id="ui">
     <div id="score">0</div>
     <div id="queueStatus">📋 Ты продвинулся на 0 мест в очереди</div>
+    <div id="coinDisplay">🪙 0</div>
     <div id="topControls">
       <button class="ctrl-btn" id="muteBtn" onclick="toggleMute()">🔊</button>
       <button class="ctrl-btn" id="pauseBtn" onclick="togglePause()">⏸</button>
@@ -32,6 +33,7 @@
       Нажми / Тапни / Пробел — прыжок<br>
       Двойной тап — двойной прыжок 🚀
     </div>
+    <div id="startCoinBalance">🪙 GPA ✦ У тебя <span id="startCoinCount">0</span> монет</div>
   </div>
 
   <div id="gameOverScreen">
@@ -42,7 +44,10 @@
     <div class="divider"></div>
     <div id="goScore">Очередь: <span id="finalScore">0</span></div>
     <div id="goBestScore">Рекорд: <span id="bestScoreDisplay">0</span></div>
+    <div id="goCoins">+0 GPA за раунд</div>
+    <div id="goTotalCoins">Всего GPA: 0</div>
     <button class="btn" onclick="startGame()">↩ ЕЩЁ РАЗ</button>
+    <button id="continueBtn" class="btn btn-coin" onclick="continueByCoin()">🪙 Продолжить за 5 GPA</button>
     <div class="hint">Ты всё ближе к эдвайзеру! 💪</div>
   </div>
 
