@@ -308,6 +308,16 @@ function addParticles(x, y) {
   }
 }
 
+function drawReadyHint() {
+  let alpha = 0.4 + Math.sin(frame * 0.08) * 0.4;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ТАП ДЛЯ СТАРТА', W/2, H/2 + 80);
+  ctx.globalAlpha = 1;
+}
+
 function addScorePopup(x, y) {
   let msgs = ['+1 место!', 'Молодец!', 'Дальше!', 'Вперёд!', 'Да!'];
   floatingTexts.push({
@@ -420,7 +430,6 @@ function startGame() {
 
   pipes = []; particles = []; floatingTexts = [];
   score = 0; frame = 0;
-  lastPipe = Date.now() + 1000;
   doubleJumpUsed = false;
 
   player.y = H/2 - 20;
@@ -428,13 +437,33 @@ function startGame() {
   player.angle = 0;
   player.alive = true;
 
-  gameState = 'playing';
+  gameState = 'ready';
+}
+
+function goToMainMenu() {
+  document.getElementById('gameOverScreen').style.display = 'none';
+  document.getElementById('startScreen').style.display = 'flex';
+  document.getElementById('score').style.display = 'none';
+  document.getElementById('queueStatus').style.display = 'none';
+
+  pipes = []; particles = []; floatingTexts = [];
+  score = 0; frame = 0;
+  player.y = H/2; player.vy = 0; player.angle = 0; player.alive = true;
+  gameState = 'start';
 }
 
 function jump() {
   if (gameState === 'start') { startGame(); return; }
   if (gameState === 'dead') return;
   if (!player.alive) return;
+
+  if (gameState === 'ready') {
+    gameState = 'playing';
+    lastPipe = Date.now() + 1000;
+    player.vy = JUMP;
+    doubleJumpUsed = false;
+    return;
+  }
 
   if (player.vy < 3 || !doubleJumpUsed === false) {
     player.vy = JUMP;
@@ -470,6 +499,13 @@ function gameLoop() {
     drawParticles();
     drawFloatingTexts();
     drawHUD();
+  }
+
+  if (gameState === 'ready') {
+    player.y = H/2 - 20 + Math.sin(frame * 0.05) * 8;
+    player.vy = 0;
+    drawPlayer();
+    drawReadyHint();
   }
 
   if (gameState === 'start') {
