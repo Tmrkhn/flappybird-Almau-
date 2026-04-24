@@ -561,7 +561,26 @@ function updatePipes() {
     const px = player.x + 4, py = player.y + 4;
     const pw = player.w - 8, ph = player.h - 8;
     if (px < p.x + p.w && px + pw > p.x) {
-      if (py < p.topH || py + ph > p.topH + PIPE_GAP) die();
+      if (py < p.topH || py + ph > p.topH + PIPE_GAP) {
+        if (playerHasShield) {
+          playerHasShield = false;
+          shieldGlow = 40;
+          p.x = -999; // удаляем столб с которым столкнулись
+          playSound('shieldBreak');
+          particles.push({
+            x: player.x + player.w/2, y: player.y + player.h/2,
+            vx: 0, vy: 0, text: '💥', size: 36, color: '#fff',
+            life: 20, maxLife: 20
+          });
+          floatingTexts.push({
+            x: player.x + 20, y: player.y - 15,
+            text: '💥 ЩИТ СЛОМАН!', color: '#ffaa00', size: 12,
+            life: 55, maxLife: 55
+          });
+        } else {
+          die();
+        }
+      }
     }
   });
 
@@ -570,18 +589,6 @@ function updatePipes() {
 
 function die() {
   if (!player.alive) return;
-
-  if (playerHasShield) {
-    playerHasShield = false;
-    shieldGlow = 40;
-    playSound('shieldBreak');
-    floatingTexts.push({
-      x: player.x + 20, y: player.y - 15,
-      text: '💥 ЩИТ СЛОМАН!', color: '#ffaa00', size: 12,
-      life: 55, maxLife: 55
-    });
-    return;
-  }
 
   player.alive = false;
   gameState = 'dead';
