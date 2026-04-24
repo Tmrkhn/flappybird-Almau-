@@ -159,14 +159,11 @@ function drawBackground() {
   // Ground — parallax layer 3 (fast)
   if (moving) groundScroll += PIPE_SPEED + score * 0.04;
 
-  const groundGrad = ctx.createLinearGradient(0, H-60, 0, H);
-  groundGrad.addColorStop(0, '#1a1a2e');
-  groundGrad.addColorStop(1, '#0f0f1a');
-  ctx.fillStyle = groundGrad;
+  ctx.fillStyle = '#0a0a0f';
   ctx.fillRect(0, H-60, W, 60);
 
-  ctx.fillStyle = '#0d0d1e';
-  ctx.fillRect(0, H-62, W, 4);
+  ctx.fillStyle = '#2a2a3f';
+  ctx.fillRect(0, H-62, W, 2);
 
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
   ctx.lineWidth = 1;
@@ -187,32 +184,13 @@ function drawBackground() {
 function drawBuildingImage() {
   if (!bgImage.complete || !bgImage.naturalWidth) return;
 
-  const imgW = W;
-  const imgH = H - 60 - 150; // from y=150 to ground line
-  const ox = -(buildingScroll % imgW);
+  const ox = -(buildingScroll % W);
 
-  // Clip to the building zone — sky gradient stays visible above y=150
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 150, W, imgH);
-  ctx.clip();
+  ctx.drawImage(bgImage, ox,     0, W, H);
+  ctx.drawImage(bgImage, ox + W, 0, W, H);
 
-  // Draw twice side-by-side for seamless horizontal loop
-  ctx.drawImage(bgImage, ox,       150, imgW, imgH);
-  ctx.drawImage(bgImage, ox + imgW, 150, imgW, imgH);
-
-  ctx.fillStyle = 'rgba(0, 0, 20, 0.45)';
+  ctx.fillStyle = 'rgba(0, 0, 20, 0.4)';
   ctx.fillRect(0, 0, W, H);
-
-  ctx.restore();
-
-  // Плавный переход небо → здание (70px)
-  const fadeH = 70;
-  const fade = ctx.createLinearGradient(0, 150, 0, 150 + fadeH);
-  fade.addColorStop(0, '#111d3a');
-  fade.addColorStop(1, 'rgba(17, 29, 58, 0)');
-  ctx.fillStyle = fade;
-  ctx.fillRect(0, 150, W, fadeH);
 }
 
 // ===== PIPES =====
