@@ -6,6 +6,9 @@ canvas.width = W; canvas.height = H;
 const bgImage = new Image();
 bgImage.src = './almau_flappybird.png';
 
+const playerImage = new Image();
+playerImage.src = './player.png';
+
 const GRAVITY = 0.45;
 const JUMP = -9.5;
 const PIPE_SPEED = 3;
@@ -313,72 +316,7 @@ function drawPlayer() {
     ctx.strokeStyle = auraColor; ctx.lineWidth = 2.5; ctx.stroke();
   }
 
-  // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.2)';
-  ctx.beginPath();
-  ctx.ellipse(2, player.h/2 - 2, 12, 5, 0, 0, Math.PI*2);
-  ctx.fill();
-
-  // Backpack
-  ctx.fillStyle = '#1a4a8a';
-  ctx.beginPath(); ctx.roundRect(-8, -4, 14, 16, 3); ctx.fill();
-  ctx.fillStyle = '#0d2a5a';
-  ctx.fillRect(-6, 2, 10, 1);
-  ctx.fillRect(-6, 5, 10, 1);
-
-  // Body (jacket)
-  ctx.fillStyle = '#003580';
-  ctx.beginPath(); ctx.roundRect(-10, -6, 20, 18, 4); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = 'bold 5px Nunito';
-  ctx.textAlign = 'center';
-  ctx.fillText('AU', 0, 3);
-
-  // Head
-  ctx.fillStyle = '#f0c080';
-  ctx.beginPath(); ctx.arc(0, -12, 10, 0, Math.PI*2); ctx.fill();
-
-  // Hair
-  ctx.fillStyle = '#3a2010';
-  ctx.beginPath(); ctx.arc(0, -18, 8, Math.PI, 0); ctx.fill();
-
-  // Eyes
-  ctx.fillStyle = '#333';
-  ctx.beginPath();
-  ctx.arc(-3, -13, 1.5, 0, Math.PI*2);
-  ctx.arc(3, -13, 1.5, 0, Math.PI*2);
-  ctx.fill();
-
-  // Smile
-  ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(0, -11, 3, 0, Math.PI); ctx.stroke();
-
-  // Arms
-  player.wingFrame += 0.15;
-  const armSwing = Math.sin(player.wingFrame) * 4;
-  ctx.strokeStyle = '#003580'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(-10, 0); ctx.lineTo(-16, 4 + armSwing);
-  ctx.moveTo(10, 0);  ctx.lineTo(16,  4 - armSwing);
-  ctx.stroke();
-
-  // Legs
-  const legSwing = Math.sin(player.wingFrame) * 3;
-  ctx.strokeStyle = '#1a3a6a';
-  ctx.beginPath();
-  ctx.moveTo(-4, 12); ctx.lineTo(-6, 20 + legSwing);
-  ctx.moveTo(4, 12);  ctx.lineTo(6,  20 - legSwing);
-  ctx.stroke();
-
-  // Jump trail
-  if (player.vy < -6) {
-    ctx.fillStyle = 'rgba(0,150,255,0.3)';
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.arc((Math.random()-0.5)*20, 15 + i*5, 3, 0, Math.PI*2);
-      ctx.fill();
-    }
-  }
+  ctx.drawImage(playerImage, -player.w/2, -player.h/2, player.w, player.h);
 
   ctx.restore();
 }
