@@ -131,8 +131,8 @@ canvas {
   border: 2px solid #00aaff;
   color: #fff;
   font-family: 'Press Start 2P', monospace;
-  font-size: 12px;
-  padding: 14px 32px;
+  font-size: 14px;
+  padding: 18px 48px;
   border-radius: 50px;
   cursor: pointer;
   pointer-events: all;
@@ -145,7 +145,7 @@ canvas {
 
 @keyframes btnPulse {
   0%, 100% { box-shadow: 0 4px 20px rgba(0, 120, 255, 0.5), 0 0 0 0 rgba(0,170,255,0.4); }
-  50% { box-shadow: 0 4px 30px rgba(0, 150, 255, 0.8), 0 0 0 8px rgba(0,170,255,0); }
+  50% { box-shadow: 0 6px 45px rgba(0, 160, 255, 1), 0 0 0 14px rgba(0,170,255,0); }
 }
 
 .btn:active { transform: scale(0.96); }

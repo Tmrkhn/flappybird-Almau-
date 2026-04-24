@@ -39,24 +39,51 @@ let deathFlash = 0;
 let totalCoins = parseInt(localStorage.getItem('almauCoins') || '0');
 let sessionCoins = 0;
 let coinOnScreen = null;
-let nextCoinPipe = 1 + Math.floor(Math.random() * 3);
+let nextCoinPipe = 4 + Math.floor(Math.random() * 3);
 let invincible = 0;
+let lifeUsedThisRound = false;
+
+// Confetti
+let confetti = [];
+let newRecordConfetti = false;
+
+// Start screen preview
+let previewPlayer = { x: -50, y: H / 2 - 60, vx: 1.2 };
+let previewPipes = [];
+let previewLastPipe = 0;
 
 // Audio
 let audioCtx = null;
 
+// Background music
+const bgMusic = new Audio('./music.ogg');
+bgMusic.loop = true;
+bgMusic.volume = 0.25;
+document.addEventListener('click', () => bgMusic.play(), { once: true });
+
 // --- Messages ---
 const deathMessages = [
   "Эдвайзер ушёл на обед 😔",
-  "Документы не приняты! Нужна печать.",
-  "Вы записаны на следующий семестр.",
-  "Пересдача! Академический должник.",
-  "Неприёмный день, приходите завтра.",
-  "Очередь обнулилась. Попробуйте снова.",
-  "Ваш номер истёк. Возьмите новый талон.",
-  "Деканат закрыт на учёт.",
+  "Документы не приняты! Нужна печать. 🖨️",
+  "Вы записаны на следующий семестр. 📅",
+  "Пересдача! Академический должник. 😬",
+  "Неприёмный день, приходите завтра. 🚪",
+  "Очередь обнулилась. Попробуйте снова. 🔄",
+  "Ваш номер истёк. Возьмите новый талон. 🎫",
+  "Деканат закрыт на учёт. 📊",
   "GPA слишком низкий для прохода 📉",
-  "Вы опоздали! Запись закрыта.",
+  "Вы опоздали! Запись закрыта. ⏰",
+  "Эдвайзер ушёл на корпоратив 🎉",
+  "Твой номер очереди устарел 📋",
+  "Деканат переехал, адрес неизвестен 🏃",
+  "Препод поставил НЕ ЯВКА 😔",
+  "Эдвайзер на больничном до конца семестра 🤒",
+  "Твой дедлайн был вчера ⏰",
+  "WiFi в AlmaU отключили, данные потеряны 📡",
+  "Декан лично тебя отчислил 📜",
+  "Пары начались, эдвайзинг закрыт 🚪",
+  "Твой GPA не позволяет пройти дальше 📉",
+  "Научрук отверг твою тему в последний момент 😱",
 ];
 
 // --- Player ---
@@ -132,7 +159,11 @@ function playSound(type) {
 
 function toggleMute() {
   isMuted = !isMuted;
-  document.getElementById('muteBtn').textContent = isMuted ? '🔇' : '🔊';
+  bgMusic.muted = isMuted;
+  localStorage.setItem('almauMuted', isMuted);
+  const icon = isMuted ? '🔇' : '🔊';
+  document.getElementById('muteBtn').textContent = icon;
+  document.getElementById('startMuteBtn').textContent = icon;
 }
 
 // ===== PAUSE =====
@@ -186,10 +217,6 @@ function drawBackground() {
     ctx.stroke();
   }
 
-  ctx.fillStyle = 'rgba(0, 150, 255, 0.15)';
-  ctx.font = 'bold 11px Nunito';
-  ctx.textAlign = 'center';
-  ctx.fillText('АЛМАТЫ МЕНЕДЖМЕНТ УНИВЕРСИТЕТ', W/2, H-20);
 }
 
 function drawBuildingImage() {
@@ -429,6 +456,45 @@ function addParticles(x, y) {
   }
 }
 
+// ===== CONFETTI =====
+const CONFETTI_COLORS = ['#FFD700','#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD'];
+
+function spawnConfetti() {
+  const count = 80 + Math.floor(Math.random() * 21);
+  for (let i = 0; i < count; i++) {
+    const maxLife = 120 + Math.floor(Math.random() * 31);
+    confetti.push({
+      x: Math.random() * W,
+      y: -10,
+      vx: (Math.random() - 0.5) * 6,
+      vy: 2 + Math.random() * 4,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.2,
+      life: maxLife, maxLife
+    });
+  }
+}
+
+function drawConfetti() {
+  confetti = confetti.filter(c => c.life > 0 && c.y < H + 20);
+  confetti.forEach(c => {
+    c.x += c.vx;
+    c.y += c.vy;
+    c.vy += 0.1;
+    c.rotation += c.rotationSpeed;
+    c.life--;
+    ctx.save();
+    ctx.globalAlpha = c.life <= 30 ? c.life / 30 : 1;
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rotation);
+    ctx.fillStyle = c.color;
+    ctx.fillRect(-3, -5, 6, 10);
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+}
+
 // ===== HUD =====
 function addScorePopup(x, y) {
   const msgs = ['+1 место!','Молодец!','Дальше!','Вперёд!','Да!'];
@@ -487,7 +553,7 @@ function spawnPipe() {
       baseY: topH + PIPE_GAP/2 + (Math.random() - 0.5) * 60,
       phase: Math.random() * Math.PI * 2
     };
-    nextCoinPipe = pipesSpawned + 1 + Math.floor(Math.random() * 3);
+    nextCoinPipe = pipesSpawned + 4 + Math.floor(Math.random() * 3);
   }
 
   if (pipesSpawned >= nextShieldPipe && !shield && !playerHasShield) {
@@ -521,7 +587,18 @@ function updatePipes() {
     if (!p.passed && p.x + p.w < player.x) {
       p.passed = true;
       score++;
-      if (score > bestScore) bestScore = score;
+      if (score > bestScore) {
+        bestScore = score;
+        if (!newRecordConfetti) {
+          newRecordConfetti = true;
+          spawnConfetti();
+          floatingTexts.push({
+            x: W/2, y: H/2 - 60,
+            text: '🏆 НОВЫЙ РЕКОРД!', color: '#FFD700', size: 20,
+            life: 120, maxLife: 120
+          });
+        }
+      }
       playSound('score');
       addScorePopup(player.x + 30, player.y);
 
@@ -571,6 +648,7 @@ function die() {
 
   player.alive = false;
   gameState = 'dead';
+  navigator.vibrate(200);
   deathFlash = 12;
   playSound('death');
   addParticles(player.x + player.w/2, player.y + player.h/2);
@@ -602,14 +680,19 @@ function showGameOver() {
   document.getElementById('goTotalCoins').textContent = `Всего GPA: ${totalCoins}`;
 
   const btn = document.getElementById('continueBtn');
-  if (totalCoins >= 5) {
-    btn.disabled = false;
-    btn.textContent = '🪙 Продолжить за 5 GPA';
-    btn.classList.remove('btn-coin--disabled');
+  if (lifeUsedThisRound) {
+    btn.style.display = 'none';
   } else {
-    btn.disabled = true;
-    btn.textContent = `Недостаточно GPA (нужно 5)`;
-    btn.classList.add('btn-coin--disabled');
+    btn.style.display = '';
+    if (totalCoins >= 5) {
+      btn.disabled = false;
+      btn.textContent = '🪙 Продолжить за 5 GPA';
+      btn.classList.remove('btn-coin--disabled');
+    } else {
+      btn.disabled = true;
+      btn.textContent = `Недостаточно GPA (нужно 5)`;
+      btn.classList.add('btn-coin--disabled');
+    }
   }
 
   document.getElementById('gameOverScreen').style.display = 'flex';
@@ -630,7 +713,10 @@ function startGame() {
   doubleJumpUsed = false; isPaused = false;
   pipesSpawned = 0;
   nextShieldPipe = 10 + Math.floor(Math.random() * 3);
-  nextCoinPipe = 1 + Math.floor(Math.random() * 3);
+  nextCoinPipe = 4 + Math.floor(Math.random() * 3);
+  lifeUsedThisRound = false;
+  newRecordConfetti = false;
+  confetti = [];
   document.getElementById('coinDisplay').style.display = 'none';
 
   player.y = H/2 - 20;
@@ -654,12 +740,16 @@ function goToMainMenu() {
   player.y = H/2; player.vy = 0; player.angle = 0; player.alive = true;
   document.getElementById('coinDisplay').style.display = 'none';
   document.getElementById('startCoinCount').textContent = totalCoins;
+  previewPipes = [];
+  previewLastPipe = 0;
+  previewPlayer = { x: -50, y: H / 2 - 60, vx: 1.2 };
   gameState = 'start';
 }
 
 function continueByCoin() {
   if (totalCoins < 5) return;
   totalCoins -= 5;
+  lifeUsedThisRound = true;
   localStorage.setItem('almauCoins', totalCoins);
 
   document.getElementById('gameOverScreen').style.display = 'none';
@@ -714,6 +804,37 @@ function jump() {
   }
 }
 
+// ===== START SCREEN PREVIEW =====
+function updateDrawStartScreen() {
+  const PREVIEW_SPEED = PIPE_SPEED / 3;
+
+  const now = Date.now();
+  if (now - previewLastPipe > 2200) {
+    const minTop = 80, maxTop = H - PIPE_GAP - 120;
+    previewPipes.push({
+      x: W + 10,
+      topH: Math.floor(Math.random() * (maxTop - minTop) + minTop),
+      w: 52, moving: false
+    });
+    previewLastPipe = now;
+  }
+  previewPipes.forEach(p => { p.x -= PREVIEW_SPEED; });
+  previewPipes = previewPipes.filter(p => p.x > -70);
+  previewPipes.forEach(p => drawPipe(p));
+
+  previewPlayer.x += previewPlayer.vx;
+  previewPlayer.y = H / 2 - 60 + Math.sin(frame * 0.04) * 22;
+  if (previewPlayer.x > W + 60) previewPlayer.vx = -1.2;
+  if (previewPlayer.x < -60) previewPlayer.vx = 1.2;
+
+  const drawW = 85, drawH = 85;
+  ctx.save();
+  ctx.translate(previewPlayer.x, previewPlayer.y);
+  if (previewPlayer.vx < 0) ctx.scale(-1, 1);
+  ctx.drawImage(playerImage, -drawW / 2, -drawH / 2, drawW, drawH);
+  ctx.restore();
+}
+
 // ===== GAME LOOP =====
 function gameLoop() {
   ctx.clearRect(0, 0, W, H);
@@ -743,6 +864,7 @@ function gameLoop() {
     }
     drawParticles();
     drawFloatingTexts();
+    drawConfetti();
     drawHUD();
   }
 
@@ -754,13 +876,7 @@ function gameLoop() {
   }
 
   if (gameState === 'start') {
-    const previewY = H/2 - 50 + Math.sin(frame * 0.05) * 20;
-    ctx.save();
-    ctx.translate(80, previewY);
-    ctx.font = '38px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('🎒', 0, 0);
-    ctx.restore();
+    updateDrawStartScreen();
   }
 
   if (deathFlash > 0) {
@@ -805,5 +921,17 @@ document.querySelectorAll('.btn, .ctrl-btn, #homeBtn, .btn-outline').forEach(btn
 });
 
 document.getElementById('startCoinCount').textContent = totalCoins;
+
+// Apply saved mute state
+(function() {
+  const saved = localStorage.getItem('almauMuted') === 'true';
+  if (saved) {
+    isMuted = true;
+    bgMusic.muted = true;
+    document.getElementById('muteBtn').textContent = '🔇';
+    document.getElementById('startMuteBtn').textContent = '🔇';
+  }
+})();
+
 bgImage.onload = () => gameLoop();
 bgImage.onerror = () => gameLoop(); // fallback если файл недоступен
