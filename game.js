@@ -34,6 +34,8 @@ let nextShieldPipe = 10 + Math.floor(Math.random() * 3);
 
 // Death
 let deathFlash = 0;
+let deathTimer = 0;
+let isDying = false;
 
 // Coins
 let totalCoins = parseInt(localStorage.getItem('almauCoins') || '0');
@@ -59,7 +61,13 @@ let audioCtx = null;
 const bgMusic = new Audio('./music.ogg');
 bgMusic.loop = true;
 bgMusic.volume = 0.25;
-document.addEventListener('click', () => bgMusic.play(), { once: true });
+let _bgMusicUnlocked = false;
+function _unlockBgMusic() {
+  if (_bgMusicUnlocked) return;
+  _bgMusicUnlocked = true;
+  if (!isMuted) bgMusic.play().catch(() => {});
+}
+document.addEventListener('click', _unlockBgMusic, { once: true });
 
 // --- Messages ---
 const deathMessages = [
@@ -414,16 +422,51 @@ function drawPlayer() {
 
 // ===== PARTICLES =====
 function drawParticles() {
+  const ground = H - 62;
   particles = particles.filter(p => p.life > 0);
   particles.forEach(p => {
-    p.x += p.vx; p.y += p.vy;
-    p.vy += 0.2; p.life--;
-    ctx.globalAlpha = p.life / p.maxLife;
-    ctx.font = p.size + 'px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(p.text, p.x, p.y);
-    ctx.globalAlpha = 1;
+    if (!p.landed) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.32;
+      p.rotation += p.rotSpeed;
+      if (p.y + p.h * 0.5 >= ground) {
+        p.y = ground - p.h * 0.5;
+        p.vy = 0;
+        p.vx *= 0.25;
+        p.rotSpeed = 0;
+        p.landed = true;
+      }
+    } else {
+      p.vx *= 0.8;
+      p.x += p.vx;
+    }
+    p.life--;
+
+    ctx.save();
+    ctx.globalAlpha = p.life < 25 ? p.life / 25 : 1;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rotation);
+
+    ctx.fillStyle = '#f2ede3';
+    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+
+    ctx.fillStyle = 'rgba(0, 60, 160, 0.4)';
+    ctx.fillRect(-p.w / 2, -p.h / 2, p.w * 0.32, p.h * 0.24);
+
+    ctx.strokeStyle = 'rgba(0, 0, 80, 0.3)';
+    ctx.lineWidth = 0.7;
+    [0.44, 0.66, 0.86].forEach(t => {
+      const ly = -p.h / 2 + p.h * t;
+      ctx.beginPath();
+      ctx.moveTo(-p.w / 2 + 2, ly);
+      ctx.lineTo(p.w / 2 - 2, ly);
+      ctx.stroke();
+    });
+
+    ctx.restore();
   });
+  ctx.globalAlpha = 1;
 }
 
 function drawFloatingTexts() {
@@ -440,18 +483,20 @@ function drawFloatingTexts() {
 }
 
 function addParticles(x, y) {
-  const emojis = ['📄','📋','📝','✏️','📚','🗂️','📃','📑'];
-  for (let i = 0; i < 16; i++) {
-    const angle = (Math.PI * 2 / 16) * i + (Math.random() - 0.5) * 0.5;
-    const speed = 2.5 + Math.random() * 5;
+  for (let i = 0; i < 22; i++) {
+    const angle = -(0.08 + Math.random() * 0.84) * Math.PI;
+    const speed = 3 + Math.random() * 9;
     particles.push({
-      x, y,
+      x: x + (Math.random() - 0.5) * 14,
+      y,
       vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - 1.5,
-      text: emojis[Math.floor(Math.random() * emojis.length)],
-      size: 14 + Math.random() * 10,
-      color: '#fff',
-      life: 60, maxLife: 60
+      vy: Math.sin(angle) * speed,
+      w: 13 + Math.random() * 10,
+      h: 10 + Math.random() * 7,
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.22,
+      life: 130, maxLife: 130,
+      landed: false
     });
   }
 }
@@ -643,16 +688,16 @@ function updatePipes() {
 }
 
 function die() {
+  addParticles(player.x + player.w/2, player.y + player.h/2);
   if (!player.alive) return;
   if (invincible > 0) return;
 
   player.alive = false;
   gameState = 'dead';
-  navigator.vibrate(200);
-  deathFlash = 12;
+  if (navigator.vibrate) navigator.vibrate(200);
   playSound('death');
-  addParticles(player.x + player.w/2, player.y + player.h/2);
-  setTimeout(() => showGameOver(), 800);
+  deathTimer = 0;
+  isDying = true;
 }
 
 function showGameOver() {
@@ -707,7 +752,7 @@ function startGame() {
   document.getElementById('topControls').style.display = 'none';
 
   pipes = []; particles = []; floatingTexts = [];
-  shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0;
+  shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0; deathTimer = 0; isDying = false;
   coinOnScreen = null; sessionCoins = 0; invincible = 0;
   score = 0; frame = 0;
   doubleJumpUsed = false; isPaused = false;
@@ -734,7 +779,7 @@ function goToMainMenu() {
   document.getElementById('topControls').style.display = 'none';
 
   pipes = []; particles = []; floatingTexts = [];
-  shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0;
+  shield = null; playerHasShield = false; shieldGlow = 0; deathFlash = 0; deathTimer = 0; isDying = false;
   coinOnScreen = null; sessionCoins = 0; invincible = 0;
   score = 0; frame = 0; isPaused = false;
   player.y = H/2; player.vy = 0; player.angle = 0; player.alive = true;
@@ -761,7 +806,7 @@ function continueByCoin() {
   pipes = [];
   coinOnScreen = null;
   lastPipe = Date.now() + 2500;
-  deathFlash = 0;
+  deathFlash = 0; deathTimer = 0; isDying = false;
 
   player.y = H/2;
   player.vy = 0;
@@ -780,8 +825,7 @@ function continueByCoin() {
 
 // ===== JUMP =====
 function jump() {
-  if (gameState === 'start') { startGame(); return; }
-  if (gameState === 'dead' || isPaused) return;
+  if (gameState === 'dead' || gameState === 'start' || isPaused) return;
   if (!player.alive) return;
 
   if (gameState === 'ready') {
@@ -837,6 +881,7 @@ function updateDrawStartScreen() {
 
 // ===== GAME LOOP =====
 function gameLoop() {
+  try {
   ctx.clearRect(0, 0, W, H);
   if (!isPaused) frame++;
 
@@ -862,6 +907,10 @@ function gameLoop() {
         drawPlayer();
       }
     }
+    if (isDying && deathTimer <= 12) {
+      ctx.fillStyle = `rgba(255,80,80,${((12 - deathTimer) / 12) * 0.45})`;
+      ctx.fillRect(0, 0, W, H);
+    }
     drawParticles();
     drawFloatingTexts();
     drawConfetti();
@@ -879,16 +928,20 @@ function gameLoop() {
     updateDrawStartScreen();
   }
 
-  if (deathFlash > 0) {
-    deathFlash--;
-    ctx.fillStyle = `rgba(255,80,80,${(deathFlash / 12) * 0.45})`;
-    ctx.fillRect(0, 0, W, H);
+  if (isDying) {
+    deathTimer++;
+    if (deathTimer >= 55) {
+      isDying = false;
+      showGameOver();
+    }
   }
-
+  } catch(e) {}
   animFrame = requestAnimationFrame(gameLoop);
 }
 
 // ===== EVENTS =====
+let _isTouchDevice = false;
+
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
     e.preventDefault();
@@ -899,26 +952,30 @@ document.addEventListener('keydown', e => {
   }
 });
 
-canvas.addEventListener('click', () => { if (!isPaused) jump(); });
+canvas.addEventListener('click', () => {
+  if (_isTouchDevice) return;
+  if (gameState !== 'playing' && gameState !== 'ready') return;
+  if (!isPaused) jump();
+});
 
-canvas.addEventListener('touchstart', e => {
+document.addEventListener('touchstart', e => {
   e.preventDefault();
-  if (isPaused) return;
-  const now = Date.now();
-  if (now - lastTap < 300) {
-    if (!doubleJumpUsed && gameState === 'playing') {
-      player.vy = JUMP * 0.85;
-      doubleJumpUsed = true;
-    }
-  } else {
-    jump();
-  }
-  lastTap = now;
+  _isTouchDevice = true;
+  _unlockBgMusic();
+  if (e.target.closest('button, .btn, .ctrl-btn, #homeBtn, .btn-outline')) return;
+  if (gameState !== 'playing' && gameState !== 'ready') return;
+  if (!isPaused) jump();
 }, { passive: false });
 
 document.querySelectorAll('.btn, .ctrl-btn, #homeBtn, .btn-outline').forEach(btn => {
-  btn.addEventListener('touchstart', e => e.stopPropagation());
+  btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
 });
+
+document.getElementById('startMuteBtn').addEventListener('touchstart', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  toggleMute();
+}, { passive: false });
 
 document.getElementById('startCoinCount').textContent = totalCoins;
 
