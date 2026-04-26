@@ -9,6 +9,12 @@ bgImage.src = './almau_flappybird.png';
 const playerImage = new Image();
 playerImage.src = './player.png';
 
+const shieldImage = new Image();
+shieldImage.src = './shield.png';
+
+const coinImage = new Image();
+coinImage.src = './coin.png';
+
 const GRAVITY = 0.45;
 const JUMP = -9.5;
 const PIPE_SPEED = 3;
@@ -165,13 +171,18 @@ function playSound(type) {
   }
 }
 
+const SVG_SOUND_ON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+const SVG_SOUND_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+const SVG_PAUSE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+const SVG_PLAY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+
 function toggleMute() {
   isMuted = !isMuted;
   bgMusic.muted = isMuted;
   localStorage.setItem('almauMuted', isMuted);
-  const icon = isMuted ? '🔇' : '🔊';
-  document.getElementById('muteBtn').textContent = icon;
-  document.getElementById('startMuteBtn').textContent = icon;
+  const icon = isMuted ? SVG_SOUND_OFF : SVG_SOUND_ON;
+  document.getElementById('muteBtn').innerHTML = icon;
+  document.getElementById('startMuteBtn').innerHTML = icon;
 }
 
 // ===== PAUSE =====
@@ -179,6 +190,7 @@ function togglePause() {
   if (gameState !== 'playing') return;
   isPaused = !isPaused;
   document.getElementById('pauseScreen').style.display = isPaused ? 'flex' : 'none';
+  document.getElementById('pauseBtn').innerHTML = isPaused ? SVG_PLAY : SVG_PAUSE;
 }
 
 // ===== BACKGROUND =====
@@ -252,12 +264,7 @@ function drawPipe(pipe) {
   ctx.fillStyle = grd;
   ctx.fillRect(pipe.x - 20, pipe.topH, pipe.w + 40, PIPE_GAP);
 
-  if (pipe.moving) {
-    ctx.fillStyle = 'rgba(255,180,50,0.45)';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('↕', pipe.x + pipe.w/2, gapMid + 4);
-  }
+
 }
 
 function drawDocumentStack(x, y, w, h, isTop) {
@@ -314,9 +321,8 @@ function drawShield() {
   ctx.arc(shield.x, shield.y, 34, 0, Math.PI*2);
   ctx.fill();
 
-  ctx.font = '26px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('🛡️', shield.x, shield.y + 9);
+  const shieldSize = 38;
+  ctx.drawImage(shieldImage, shield.x - shieldSize / 2, shield.y - shieldSize / 2, shieldSize, shieldSize);
 
   if (gameState === 'playing' && !isPaused) {
     const dx = shield.x - (player.x + player.w/2);
@@ -348,6 +354,7 @@ function drawCoin() {
   const x = coinOnScreen.x;
   const y = coinOnScreen.baseY + Math.sin(coinOnScreen.phase) * 6;
   const r = 15;
+  const drawR = 20;
 
   // Outer glow
   const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
@@ -356,19 +363,7 @@ function drawCoin() {
   ctx.fillStyle = glow;
   ctx.beginPath(); ctx.arc(x, y, r * 2.2, 0, Math.PI*2); ctx.fill();
 
-  // Dark fill
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
-  ctx.fillStyle = '#1a1000'; ctx.fill();
-
-  // Gold border
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
-  ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 2.5; ctx.stroke();
-
-  // GPA text
-  ctx.fillStyle = '#ffcc00';
-  ctx.font = 'bold 7px "Press Start 2P", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('GPA', x, y + 3);
+  ctx.drawImage(coinImage, x - drawR, y - drawR, drawR * 2, drawR * 2);
 
   // Collision
   if (gameState === 'playing' && !isPaused) {
@@ -382,7 +377,7 @@ function drawCoin() {
       playSound('coin');
       floatingTexts.push({
         x: player.x + 20, y: player.y - 15,
-        text: '+1 GPA 🪙', color: '#ffcc00', size: 13,
+        text: '+1 GPA', coinIcon: true, color: '#ffcc00', size: 13,
         life: 45, maxLife: 45
       });
     }
@@ -478,6 +473,10 @@ function drawFloatingTexts() {
     ctx.font = `bold ${t.size || 14}px Nunito`;
     ctx.textAlign = 'center';
     ctx.fillText(t.text, t.x, t.y);
+    if (t.coinIcon) {
+      const textW = ctx.measureText(t.text).width;
+      ctx.drawImage(coinImage, t.x + textW / 2 + 4, t.y - 12, 20, 20);
+    }
     ctx.globalAlpha = 1;
   });
 }
@@ -560,7 +559,7 @@ function drawHUD() {
   document.getElementById('queueStatus').style.display = 'block';
   document.getElementById('queueStatus').textContent = `📋 Ты продвинулся на ${score} мест в очереди`;
   document.getElementById('coinDisplay').style.display = 'block';
-  document.getElementById('coinDisplay').textContent = `🪙 ${totalCoins}`;
+  document.getElementById('coinCount').textContent = totalCoins;
 
   if (playerHasShield) {
     ctx.fillStyle = 'rgba(0,200,255,0.7)';
@@ -985,8 +984,8 @@ document.getElementById('startCoinCount').textContent = totalCoins;
   if (saved) {
     isMuted = true;
     bgMusic.muted = true;
-    document.getElementById('muteBtn').textContent = '🔇';
-    document.getElementById('startMuteBtn').textContent = '🔇';
+    document.getElementById('muteBtn').innerHTML = SVG_SOUND_OFF;
+    document.getElementById('startMuteBtn').innerHTML = SVG_SOUND_OFF;
   }
 })();
 
