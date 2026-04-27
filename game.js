@@ -363,7 +363,7 @@ function drawCoin() {
   ctx.fillStyle = glow;
   ctx.beginPath(); ctx.arc(x, y, r * 2.2, 0, Math.PI*2); ctx.fill();
 
-  ctx.drawImage(coinImage, x - drawR, y - drawR, drawR * 2, drawR * 2);
+  ctx.drawImage(coinImage, x - drawR - 7.5, y - drawR - 7.5, drawR * 2 + 15, drawR * 2 + 15);
 
   // Collision
   if (gameState === 'playing' && !isPaused) {
@@ -475,7 +475,7 @@ function drawFloatingTexts() {
     ctx.fillText(t.text, t.x, t.y);
     if (t.coinIcon) {
       const textW = ctx.measureText(t.text).width;
-      ctx.drawImage(coinImage, t.x + textW / 2 + 4, t.y - 12, 20, 20);
+      ctx.drawImage(coinImage, t.x + textW / 2 + 4, t.y - 12, 35, 35);
     }
     ctx.globalAlpha = 1;
   });
